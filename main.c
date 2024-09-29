@@ -328,7 +328,7 @@ CreateResolveTexture(AppState* appstate, Uint32 drawablew, Uint32 drawableh)
 static void get_piece_coords(Uint8 piece, int x, int y, Uint8 rot, int* xs_out, int* ys_out)
 {
 	//                  L          J          S          Z          T          O          I
-	const int xs[] = { -1,-1, 1,  -1, 1, 1,  -1, 0, 1,  -1, 0,-1,  -1, 0, 1,  -1,-1, 0,  -2,-1, 1 };
+	const int xs[] = { -1,-1, 1,  -1, 1, 1,  -1, 0, 1,  -1, 0, 1,  -1, 0, 1,  -1,-1, 0,  -2,-1, 1 };
 	const int ys[] = { -1, 0, 0,   0, 0,-1,  -1,-1, 0,   0,-1,-1,   0,-1, 0,  -1, 0,-1,   0, 0, 0 };
 	int o = (piece - 1) * 3;
 	switch (rot)
@@ -870,7 +870,7 @@ SDL_AppResult SDL_AppEvent(void* appstate_ptr, SDL_Event* event)
 			try_move(tetris, 1, 0, 0);
 		if (rot)
 		{
-			int i_nudge = tetris->x == 0 && tetris->piece == 8;
+			int i_nudge = tetris->x == 0 && tetris->piece == 7;
 			int d = 1;
 			try_move(tetris, 0, 0, d) ||
 			try_move(tetris, -1, 0, d) ||
