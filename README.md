@@ -15,7 +15,7 @@ A hello world application. Based on the `testgpu_spinning_cube.c` from SDL examp
  * navigate to this folder, run "cmake -S . -B build"
  * go to the newly created build folder and open the .sln file
  * compile and run normally
-### Linux & Mac:
+### Linux & Mac
  * cmake -S . -B build
  * cd build
  * make
