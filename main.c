@@ -12,7 +12,9 @@
 *		- goto the newly created build folder and open the .sln file
 *		- compile & run normally
 *	- Linux & Mac:
-*		- probably use "cmake -S . -B build" and run "make build -j 12" or something like that, good luck
+*		- cmake -S . -B build
+*		- cd build
+*		- make
 */
 
 #include <stdlib.h>
