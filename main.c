@@ -61,20 +61,17 @@ typedef struct Tetris
 	Uint8 x;
 	Uint8 y;
 	Uint8 piece;
-	Uint8 input_rot;
-	Uint8 input_down;
-	Uint8 input_left;
-	Uint8 input_right;
-	Uint8 input_drop;
+	float current_xs[224];
+	float current_ys[224];
 } Tetris;
 
 typedef struct AppState
 {
-	Uint32 frames;
 	SDL_GPUDevice* gpu_device;
 	RenderState render_state;
 	SDLTest_CommonState* state;
 	WindowState* window_states;
+	Uint32 frames;
 	Tetris* tetris;
 } AppState;
 
@@ -359,15 +356,10 @@ static void get_piece_coords(Uint8 piece, int x, int y, Uint8 rot, int* xs_out, 
 	ys_out[3] = y;
 }
 
-static int try_move(Tetris* tetris, int dx, int dy, int drot)
+static int can_move(Tetris* tetris, int x, int y, int rot)
 {
-	//                   L  J  S  Z  T  O  I
-	const int rots[] = { 4, 4, 2, 2, 4, 1, 2 };
 	int xs[4] = { 0 };
 	int ys[4] = { 0 };
-	int x = tetris->x + dx;
-	int y = tetris->y + dy;
-	int rot = (tetris->rot + drot + 4) % rots[tetris->piece - 1];
 	get_piece_coords(tetris->piece, x, y, rot, xs, ys);
 	if (xs[0] < 0 || xs[0] >= 10 || ys[0] < 0 || ys[0] >= 22 || (tetris->board[xs[0] + ys[0] * 10] != 0) ||
 		xs[1] < 0 || xs[1] >= 10 || ys[1] < 0 || ys[1] >= 22 || (tetris->board[xs[1] + ys[1] * 10] != 0) ||
@@ -376,6 +368,19 @@ static int try_move(Tetris* tetris, int dx, int dy, int drot)
 	{
 		return 0;
 	}
+
+	return 1;
+}
+
+static int try_move(Tetris* tetris, int dx, int dy, int drot)
+{
+	//                   L  J  S  Z  T  O  I
+	const int rots[] = { 4, 4, 2, 2, 4, 1, 2 };
+	int x = tetris->x + dx;
+	int y = tetris->y + dy;
+	int rot = (tetris->rot + drot + 4) % rots[tetris->piece - 1];
+	if (0 == can_move(tetris, x, y, rot))
+		return 0;
 
 	tetris->x = x;
 	tetris->y = y;
@@ -435,7 +440,7 @@ static void Render(AppState* appstate, SDL_Window* window, const int windownum)
 	SDL_GPURenderPass* pass;
 	SDL_GPUBufferBinding vertex_binding;
 	SDL_GPUBlitInfo blit_info;
-	int drawablew, drawableh;
+	Uint32 drawablew, drawableh;
 
 	SDL_GPUDevice* gpu_device = appstate->gpu_device;
 	SDLTest_CommonState* state = appstate->state;
@@ -448,7 +453,7 @@ static void Render(AppState* appstate, SDL_Window* window, const int windownum)
 		SDL_assert_always(0);
 		return;
 	}
-	if (!SDL_AcquireGPUSwapchainTexture(cmd, state->windows[windownum], &swapchainTexture)) {
+	if (!SDL_AcquireGPUSwapchainTexture(cmd, state->windows[windownum], &swapchainTexture, &drawablew, &drawableh)) {
 		SDL_Log("Failed to acquire swapchain texture: %s", SDL_GetError());
 		SDL_assert_always(0);
 		return;
@@ -459,8 +464,6 @@ static void Render(AppState* appstate, SDL_Window* window, const int windownum)
 		SDL_SubmitGPUCommandBuffer(cmd);
 		return;
 	}
-
-	SDL_GetWindowSizeInPixels(window, &drawablew, &drawableh);
 
 	/*
 	* Do some rotation with Euler angles. It is not a fixed axis as
@@ -542,27 +545,10 @@ static void Render(AppState* appstate, SDL_Window* window, const int windownum)
 	matrix_modelview[14] = -22.0f;
 
 	Tetris* tetris = appstate->tetris;
-	int piece_xs[4] = { 0 };
-	int piece_ys[4] = { 0 };
-	get_piece_coords(tetris->piece, tetris->x, tetris->y, tetris->rot, piece_xs, piece_ys);
-
-	for (int i = 0; i < 220; ++i)
+	for (int i = 0; i < sizeof(tetris->current_xs) / sizeof(tetris->current_xs[0]); ++i)
 	{
-		Uint8 color = tetris->board[i];
-		int x = i % 10;
-		int y = i / 10;
-		color = (
-			(piece_xs[0] == x && piece_ys[0] == y) ||
-			(piece_xs[1] == x && piece_ys[1] == y) ||
-			(piece_xs[2] == x && piece_ys[2] == y) ||
-			(piece_xs[3] == x && piece_ys[3] == y)
-			) ? tetris->piece : color;
-		if (color == 0)
-		{
-			continue;
-		}
-		matrix_modelview[12] = (float)x - 4.5f;
-		matrix_modelview[13] = (float)y - 10.5f;
+		matrix_modelview[12] = tetris->current_xs[i];
+		matrix_modelview[13] = tetris->current_ys[i];
 
 		float matrix_final[16];
 		multiply_matrix(matrix_perspective, matrix_modelview, matrix_final);
@@ -811,6 +797,76 @@ init_render_state(AppState* appstate, int msaa)
 	return SDL_APP_CONTINUE;
 }
 
+static void lerp(float* a, float b, float t)
+{
+	*a = *a + (b - *a) * t;
+}
+
+static void Interpolate(Tetris* tetris, float dt)
+{
+	int piece_xs[4] = { 0 };
+	int piece_ys[4] = { 0 };
+	get_piece_coords(tetris->piece, tetris->x, tetris->y, tetris->rot, piece_xs, piece_ys);
+
+	int offset = 0;
+
+	float t = 1.0f - SDL_pow(0.000001, SDL_clamp(dt, 0.0, 1.0));
+
+	for (int i = 0; i < 220; ++i)
+	{
+		Uint8 color = tetris->board[i];
+		int x = i % 10;
+		int y = i / 10;
+		if (color == 0)
+		{
+			continue;
+		}
+
+		int p = offset++;
+		lerp(&tetris->current_xs[p], (float)x - 4.5f, t);
+		lerp(&tetris->current_ys[p], (float)y - 10.5f, t);
+	}
+
+	int shadow_dy = 0;
+	while (can_move(tetris, tetris->x, tetris->y + shadow_dy - 1, tetris->rot))
+	{
+		shadow_dy -= 1;
+	}
+
+	for (int i = 0; i < 4; ++i)
+	{
+		int x = piece_xs[i];
+		int y = piece_ys[i] + shadow_dy;
+		int p = offset++;
+		lerp(&tetris->current_xs[p], (float)x - 4.5f, t);
+		lerp(&tetris->current_ys[p], (float)y - 10.5f, t);
+	}
+
+	for (int i = 0; i < 4; ++i)
+	{
+		int x = piece_xs[i];
+		int y = piece_ys[i];
+		int p = offset++;
+		lerp(&tetris->current_xs[p], (float)x - 4.5f, t);
+		lerp(&tetris->current_ys[p], (float)y - 10.5f, t);
+	}
+
+	for (; offset < sizeof(tetris->current_xs) / sizeof(tetris->current_xs[0]); ++offset)
+	{
+		int p = offset;
+		if (tetris->current_ys[p] < 15.0f && tetris->current_ys[p] > -15.0f)
+		{
+			//lerp(&tetris->current_xs[p], -0.5f, t);
+			lerp(&tetris->current_ys[p], -15.5f, t);
+		}
+		else
+		{
+			tetris->current_xs[p] = -0.5f;
+			tetris->current_ys[p] = 15.0f;
+		}
+	}
+}
+
 SDL_AppResult SDL_AppIterate(void* appstate_ptr)
 {
 	AppState* appstate = appstate_ptr;
@@ -819,10 +875,11 @@ SDL_AppResult SDL_AppIterate(void* appstate_ptr)
 		Tetris* tetris = appstate->tetris;
 		if (tetris->piece == 0)
 		{
-			SDL_memset(tetris, 0, sizeof(Tetris));
+			SDL_memset(tetris, 0, sizeof(Tetris) - sizeof(tetris->current_xs) * 2);
 			tetris->piece = 1;
 			tetris->x = 5;
 			tetris->y = 21;
+			tetris->prev_ns = SDL_GetTicksNS();
 		}
 
 		Uint64 now = SDL_GetTicksNS();
@@ -840,6 +897,8 @@ SDL_AppResult SDL_AppIterate(void* appstate_ptr)
 			}
 			tetris->drop_timer += 1000000000 >> (tetris->lines / 10);
 		}
+
+		Interpolate(appstate->tetris, dt / 1000000000.0f);
 	}
 
 

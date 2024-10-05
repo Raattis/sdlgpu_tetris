@@ -16,7 +16,7 @@ include(FetchContent)
 FetchContent_Declare(
         SDL
         GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
-        GIT_TAG fc242abbd2bddface0fd9ffba47957d978c21bf4
+        GIT_TAG 1ca45c58912aaa2c02e0f143d36d7f171e5afbb5
         GIT_PROGRESS TRUE
 )
 
@@ -31,7 +31,9 @@ add_executable(sdlgputest
         ${sdl_SOURCE_DIR}/src/test/SDL_test_font.c
         ${sdl_SOURCE_DIR}/src/test/SDL_test_crc32.c
         ${sdl_SOURCE_DIR}/src/test/SDL_test_fuzzer.c
-        "main.c")
+        #${sdl_SOURCE_DIR}/test/testgpu_spinning_cube.c
+        "main.c"
+        )
 
 function(PRINT_VARIABLES)
     get_cmake_property(_variableNames VARIABLES)
