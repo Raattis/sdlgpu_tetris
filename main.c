@@ -1036,7 +1036,7 @@ static void shutdownGPU(AppState* appstate)
 	appstate->gpu_device = NULL;
 }
 
-void SDL_AppQuit(void* appstate_ptr)
+void SDL_AppQuit(void* appstate_ptr, SDL_AppResult)
 {
 	AppState* appstate = appstate_ptr;
 	shutdownGPU(appstate);
