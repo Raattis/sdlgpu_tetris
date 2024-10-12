@@ -26,12 +26,6 @@ include_directories(${sdl_SOURCE_DIR}/test)
 include_directories(${sdl_SOURCE_DIR}/src)
 
 add_executable(sdlgputest
-        ${sdl_SOURCE_DIR}/src/test/SDL_test_common.c
-        ${sdl_SOURCE_DIR}/src/test/SDL_test_memory.c
-        ${sdl_SOURCE_DIR}/src/test/SDL_test_font.c
-        ${sdl_SOURCE_DIR}/src/test/SDL_test_crc32.c
-        ${sdl_SOURCE_DIR}/src/test/SDL_test_fuzzer.c
-        #${sdl_SOURCE_DIR}/test/testgpu_spinning_cube.c
         "main.c"
         )
 

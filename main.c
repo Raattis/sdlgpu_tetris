@@ -19,7 +19,6 @@
 
 #include <stdlib.h>
 
-#include <SDL3/SDL_test_common.h>
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_assert.h>
 
@@ -69,8 +68,8 @@ typedef struct AppState
 {
 	SDL_GPUDevice* gpu_device;
 	RenderState render_state;
-	SDLTest_CommonState* state;
-	WindowState* window_states;
+	WindowState* window_state;
+	SDL_Window* window;
 	Uint32 frames;
 	Tetris* tetris;
 } AppState;
@@ -245,7 +244,6 @@ CreateDepthTexture(AppState* appstate, Uint32 drawablew, Uint32 drawableh)
 	SDL_GPUTexture* result;
 
 	SDL_GPUDevice* gpu_device = appstate->gpu_device;
-	SDLTest_CommonState* state = appstate->state;
 	RenderState* render_state = &appstate->render_state;
 
 	createinfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -271,7 +269,6 @@ CreateMSAATexture(AppState* appstate, Uint32 drawablew, Uint32 drawableh)
 	SDL_GPUTexture* result;
 
 	SDL_GPUDevice* gpu_device = appstate->gpu_device;
-	SDLTest_CommonState* state = appstate->state;
 	RenderState* render_state = &appstate->render_state;
 
 	if (render_state->sample_count == SDL_GPU_SAMPLECOUNT_1) {
@@ -279,7 +276,7 @@ CreateMSAATexture(AppState* appstate, Uint32 drawablew, Uint32 drawableh)
 	}
 
 	createinfo.type = SDL_GPU_TEXTURETYPE_2D;
-	createinfo.format = SDL_GetGPUSwapchainTextureFormat(gpu_device, state->windows[0]);
+	createinfo.format = SDL_GetGPUSwapchainTextureFormat(gpu_device, appstate->window);
 	createinfo.width = drawablew;
 	createinfo.height = drawableh;
 	createinfo.layer_count_or_depth = 1;
@@ -301,7 +298,6 @@ CreateResolveTexture(AppState* appstate, Uint32 drawablew, Uint32 drawableh)
 	SDL_GPUTexture* result;
 
 	SDL_GPUDevice* gpu_device = appstate->gpu_device;
-	SDLTest_CommonState* state = appstate->state;
 	RenderState* render_state = &appstate->render_state;
 
 	if (render_state->sample_count == SDL_GPU_SAMPLECOUNT_1) {
@@ -309,7 +305,7 @@ CreateResolveTexture(AppState* appstate, Uint32 drawablew, Uint32 drawableh)
 	}
 
 	createinfo.type = SDL_GPU_TEXTURETYPE_2D;
-	createinfo.format = SDL_GetGPUSwapchainTextureFormat(gpu_device, state->windows[0]);
+	createinfo.format = SDL_GetGPUSwapchainTextureFormat(gpu_device, appstate->window);
 	createinfo.width = drawablew;
 	createinfo.height = drawableh;
 	createinfo.layer_count_or_depth = 1;
@@ -429,9 +425,9 @@ void glue(Tetris* tetris)
 	}
 }
 
-static void Render(AppState* appstate, SDL_Window* window, const int windownum)
+static void Render(AppState* appstate, SDL_Window* window)
 {
-	WindowState* winstate = &appstate->window_states[windownum];
+	WindowState* winstate = appstate->window_state;
 	SDL_GPUTexture* swapchainTexture;
 	SDL_GPUColorTargetInfo color_target;
 	SDL_GPUDepthStencilTargetInfo depth_target;
@@ -443,7 +439,6 @@ static void Render(AppState* appstate, SDL_Window* window, const int windownum)
 	Uint32 drawablew, drawableh;
 
 	SDL_GPUDevice* gpu_device = appstate->gpu_device;
-	SDLTest_CommonState* state = appstate->state;
 	RenderState* render_state = &appstate->render_state;
 
 	/* Acquire the swapchain texture */
@@ -453,7 +448,7 @@ static void Render(AppState* appstate, SDL_Window* window, const int windownum)
 		SDL_assert_always(0);
 		return;
 	}
-	if (!SDL_AcquireGPUSwapchainTexture(cmd, state->windows[windownum], &swapchainTexture, &drawablew, &drawableh)) {
+	if (!SDL_AcquireGPUSwapchainTexture(cmd, window, &swapchainTexture, &drawablew, &drawableh)) {
 		SDL_Log("Failed to acquire swapchain texture: %s", SDL_GetError());
 		SDL_assert_always(0);
 		return;
@@ -585,7 +580,6 @@ static SDL_GPUShader*
 load_shader(AppState* appstate, bool is_vertex)
 {
 	SDL_GPUDevice* gpu_device = appstate->gpu_device;
-	SDLTest_CommonState* state = appstate->state;
 	RenderState* render_state = &appstate->render_state;
 
 	SDL_GPUShaderCreateInfo createinfo;
@@ -626,7 +620,7 @@ load_shader(AppState* appstate, bool is_vertex)
 }
 
 static SDL_AppResult
-init_render_state(AppState* appstate, int msaa)
+init_render_state(AppState* appstate)
 {
 	SDL_GPUCommandBuffer* cmd;
 	SDL_GPUTransferBuffer* buf_transfer;
@@ -647,15 +641,15 @@ init_render_state(AppState* appstate, int msaa)
 	appstate->gpu_device = SDL_CreateGPUDevice(
 		TESTGPU_SUPPORTED_FORMATS,
 		true,
-		appstate->state->gpudriver
+		NULL
 	);
 	CHECK_CREATE(appstate->gpu_device, "GPU device");
 
 	/* Claim the windows */
-	for (int i = 0; i < appstate->state->num_windows; ++i) {
+	for (int i = 0; i < 1; ++i) {
 		SDL_ClaimWindowForGPUDevice(
 			appstate->gpu_device,
-			appstate->state->windows[i]
+			appstate->window
 		);
 	}
 
@@ -711,9 +705,10 @@ init_render_state(AppState* appstate, int msaa)
 
 	/* Determine which sample count to use */
 	appstate->render_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+	int msaa = 1;
 	if (msaa && SDL_GPUTextureSupportsSampleCount(
 		appstate->gpu_device,
-		SDL_GetGPUSwapchainTextureFormat(appstate->gpu_device, appstate->state->windows[0]),
+		SDL_GetGPUSwapchainTextureFormat(appstate->gpu_device, appstate->window),
 		SDL_GPU_SAMPLECOUNT_4)) {
 		appstate->render_state.sample_count = SDL_GPU_SAMPLECOUNT_4;
 	}
@@ -723,7 +718,7 @@ init_render_state(AppState* appstate, int msaa)
 	SDL_zero(pipelinedesc);
 	SDL_zero(color_target_desc);
 
-	color_target_desc.format = SDL_GetGPUSwapchainTextureFormat(appstate->gpu_device, appstate->state->windows[0]);
+	color_target_desc.format = SDL_GetGPUSwapchainTextureFormat(appstate->gpu_device, appstate->window);
 
 	pipelinedesc.target_info.num_color_targets = 1;
 	pipelinedesc.target_info.color_target_descriptions = &color_target_desc;
@@ -771,28 +766,20 @@ init_render_state(AppState* appstate, int msaa)
 	SDL_ReleaseGPUShader(appstate->gpu_device, fragment_shader);
 
 	/* Set up per-window state */
-	appstate->window_states = (WindowState*)SDL_calloc(appstate->state->num_windows, sizeof(WindowState));
-	if (!appstate->window_states)
+	appstate->window_state = (WindowState*)SDL_calloc(1, sizeof(WindowState));
+	if (!appstate->window_state)
 	{
 		SDL_Log("Out of memory!\n");
 		return SDL_APP_FAILURE;
 	}
 
-	for (int i = 0; i < appstate->state->num_windows; ++i)
-	{
-		WindowState* winstate = &appstate->window_states[i];
+	WindowState* winstate = appstate->window_state;
 
-		/* create a depth texture for the window */
-		SDL_GetWindowSizeInPixels(appstate->state->windows[i], (int*)&drawablew, (int*)&drawableh);
-		winstate->tex_depth = CreateDepthTexture(appstate, drawablew, drawableh);
-		winstate->tex_msaa = CreateMSAATexture(appstate, drawablew, drawableh);
-		winstate->tex_resolve = CreateResolveTexture(appstate, drawablew, drawableh);
-
-		/* make each window different */
-		winstate->angle_x = (i * 10) % 360;
-		winstate->angle_y = (i * 20) % 360;
-		winstate->angle_z = (i * 30) % 360;
-	}
+	/* create a depth texture for the window */
+	SDL_GetWindowSizeInPixels(appstate->window, (int*)&drawablew, (int*)&drawableh);
+	winstate->tex_depth = CreateDepthTexture(appstate, drawablew, drawableh);
+	winstate->tex_msaa = CreateMSAATexture(appstate, drawablew, drawableh);
+	winstate->tex_resolve = CreateResolveTexture(appstate, drawablew, drawableh);
 
 	return SDL_APP_CONTINUE;
 }
@@ -902,21 +889,28 @@ SDL_AppResult SDL_AppIterate(void* appstate_ptr)
 	}
 
 
-	for (int window_index = 0; window_index < appstate->state->num_windows; ++window_index)
-	{
-		Render(appstate, appstate->state->windows[window_index], window_index);
-	}
+	Render(appstate, appstate->window);
 	return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppEvent(void* appstate_ptr, SDL_Event* event)
 {
+	//int verbose = VERBOSE_EVENT | VERBOSE_MOTION;
+	//if (verbose & VERBOSE_EVENT) {
+	//	if (((event->type != SDL_EVENT_MOUSE_MOTION) &&
+	//		(event->type != SDL_EVENT_FINGER_MOTION)) ||
+	//		(verbose & VERBOSE_MOTION)) {
+	//		//SDLTest_PrintEvent(event);
+	//	}
+	//}
+
 	AppState* appstate = appstate_ptr;
-	int done = 0;
-	SDLTest_CommonEvent(appstate->state, event, &done);
 
 	if (event->type == SDL_EVENT_KEY_DOWN)
 	{
+		if (event->key.key == SDLK_ESCAPE)
+			return SDL_APP_SUCCESS;
+
 		int rot = event->key.key == SDLK_UP;
 		int down = event->key.key == SDLK_DOWN;
 		int left = event->key.key == SDLK_LEFT;
@@ -956,7 +950,15 @@ SDL_AppResult SDL_AppEvent(void* appstate_ptr, SDL_Event* event)
 			tetris->drop_timer += 1000000000 >> (tetris->lines / 10);
 		}
 	}
-	return done ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
+
+	switch (event->type) {
+	case SDL_EVENT_QUIT:
+		return SDL_APP_SUCCESS;
+	case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+		SDL_HideWindow(SDL_GetWindowFromEvent(event));
+	}
+
+	return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppInit(void** appstate_out, int argc, char* argv[])
@@ -964,44 +966,7 @@ SDL_AppResult SDL_AppInit(void** appstate_out, int argc, char* argv[])
 	AppState* appstate = SDL_calloc(1, sizeof(AppState));
 	*appstate_out = appstate;
 
-	/* Initialize test framework */
-	appstate->state = SDLTest_CommonCreateState(argv, SDL_INIT_VIDEO);
-	if (!appstate->state) {
-		SDL_assert_always(!"SDLTest_CommonCreateState failed to create test framework");
-		return SDL_APP_FAILURE;
-	}
-
-	int msaa = 0;
-	for (int i = 1; i < argc;) {
-		int consumed;
-
-		consumed = SDLTest_CommonArg(appstate->state, i);
-		if (consumed == 0) {
-			if (SDL_strcasecmp(argv[i], "--msaa") == 0) {
-				++msaa;
-				consumed = 1;
-			}
-			else {
-				consumed = -1;
-			}
-		}
-		if (consumed < 0) {
-			static const char* options[] = { "[--msaa]", NULL };
-			SDLTest_CommonLogUsage(appstate->state, argv[0], options);
-			return SDL_APP_FAILURE;
-		}
-		i += consumed;
-	}
-
-	appstate->state->skip_renderer = 1;
-	appstate->state->window_flags |= SDL_WINDOW_RESIZABLE;
-	appstate->state->window_w = 200 + 20;
-	appstate->state->window_h = 440 + 20;
-
-	if (!SDLTest_CommonInit(appstate->state)) {
-		SDL_assert_always(!"SDLTest_CommonInit failed to init test framework");
-		return SDL_APP_FAILURE;
-	}
+	appstate->window = SDL_CreateWindow("sdltris", 200 + 20, 440 + 20, SDL_WINDOW_RESIZABLE);
 
 	appstate->tetris = SDL_calloc(1, sizeof(Tetris));
 	if (!appstate->tetris)
@@ -1010,22 +975,19 @@ SDL_AppResult SDL_AppInit(void** appstate_out, int argc, char* argv[])
 		return SDL_APP_FAILURE;
 	}
 
-	return init_render_state(appstate, msaa);
+	return init_render_state(appstate);
 }
 
 static void shutdownGPU(AppState* appstate)
 {
-	if (appstate->window_states) {
-		int i;
-		for (i = 0; i < appstate->state->num_windows; i++) {
-			WindowState* winstate = &appstate->window_states[i];
-			SDL_ReleaseGPUTexture(appstate->gpu_device, winstate->tex_depth);
-			SDL_ReleaseGPUTexture(appstate->gpu_device, winstate->tex_msaa);
-			SDL_ReleaseGPUTexture(appstate->gpu_device, winstate->tex_resolve);
-			SDL_ReleaseWindowFromGPUDevice(appstate->gpu_device, appstate->state->windows[i]);
-		}
-		SDL_free(appstate->window_states);
-		appstate->window_states = NULL;
+	if (appstate->window_state) {
+		WindowState* winstate = appstate->window_state;
+		SDL_ReleaseGPUTexture(appstate->gpu_device, winstate->tex_depth);
+		SDL_ReleaseGPUTexture(appstate->gpu_device, winstate->tex_msaa);
+		SDL_ReleaseGPUTexture(appstate->gpu_device, winstate->tex_resolve);
+		SDL_ReleaseWindowFromGPUDevice(appstate->gpu_device, appstate->window);
+		SDL_free(appstate->window_state);
+		appstate->window_state = NULL;
 	}
 
 	SDL_ReleaseGPUBuffer(appstate->gpu_device, appstate->render_state.buf_vertex);
@@ -1040,7 +1002,6 @@ void SDL_AppQuit(void* appstate_ptr)
 {
 	AppState* appstate = appstate_ptr;
 	shutdownGPU(appstate);
-	SDLTest_CommonQuit(appstate->state);
 	SDL_free(appstate->tetris);
 	SDL_free(appstate);
 }
